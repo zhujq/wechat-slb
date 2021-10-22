@@ -55,14 +55,30 @@ func proxy(target string, w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
+//HTTPGet get 请求，用于健康检查
+func HTTPGet(uri string) (bool) {
+	_, err := http.Get(uri)
+	if err != nil {
+		return false
+	}
+
+	return true
+}
+
 func handle(w http.ResponseWriter, r *http.Request) {
 	baseURL := r.URL.Path[1:]
 	baseURL = strings.Split(baseURL, "/")[0]
 	writeToLog("Basepath: /" + baseURL)
 	if len(config.Servers) > 0 {
-		server := chooseServer(config.Servers, serverMethod)
-		writeToLog("Server: " + server)
-		proxy(server, w, r)
+		for {
+			server := chooseServer(config.Servers, serverMethod)
+			if HTTPGet(server) == true {
+				writeToLog("Healthy Server: " + server)
+				proxy(server, w, r)
+				break
+			}
+			
+		}
 	} else if len(config.Routes) > 0 {
 		for m := range config.Routes {
 			route := config.Routes[m].Route
@@ -125,6 +141,8 @@ func launch(server *http.Server, wg *sync.WaitGroup) {
 	server.ListenAndServe()
 	wg.Done()
 }
+
+
 
 func main() {
 	var configFile = "./slb.json"
