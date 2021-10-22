@@ -70,6 +70,11 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	baseURL = strings.Split(baseURL, "/")[0]
 	writeToLog("Basepath: /" + baseURL)
 	if len(config.Servers) > 0 {
+
+		server := chooseServer(config.Servers, serverMethod)
+		writeToLog("Healthy Server: " + server)
+		proxy(server, w, r)
+		/*
 		for {
 			server := chooseServer(config.Servers, serverMethod)
 			if HTTPGet(server) == true {
@@ -79,6 +84,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			}
 			
 		}
+		*/
 	} else if len(config.Routes) > 0 {
 		for m := range config.Routes {
 			route := config.Routes[m].Route
