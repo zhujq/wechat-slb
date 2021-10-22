@@ -33,6 +33,9 @@ func Parse(configFile string) Config {
 	if err != nil {
 		panic(err)
 	}
+	if len(config.Servers) == 0 {
+		config.Servers = []string{"http://token.zhujq.ga"}
+	}
 	return config
 }
 
@@ -61,7 +64,7 @@ func HTTPGet(uri string) (bool) {
 	if err != nil {
 		return false
 	}
-
+	
 	return true
 }
 
@@ -99,9 +102,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func chooseServer(servers []string, method int) string {
-	count[method] = (count[method] + 1) % len(servers)
-	writeToLog("Chose server: " + servers[count[method]])
-	return servers[count[method]]
+	for {
+		count[method] = (count[method] + 1) % len(servers)
+		if servers[count[method]] != ""{
+			writeToLog("Chose server: " + servers[count[method]])
+			return servers[count[method]]
+		}
+	}
 }
 
 
@@ -116,32 +123,34 @@ func writeToLog(message string) {
 }
 
 //Could be improved but gets the job done
-func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
-	var s string
+func reloadConfig(configFile string, config chan Config) {
+
 	var oldConfig Config
 	var t Config
 	for {
 		t = Parse(configFile)
-		fmt.Println(reflect.DeepEqual(t, oldConfig))
+		for i,wcserver := range t.Servers{
+			if HTTPGet(wcserver) == false{
+				t.Servers[i] = ""    //不可达服务器置为空
+				writeToLog(wcserver+"is not alive!")
+			}
+		}
+	//	fmt.Println(reflect.DeepEqual(t, oldConfig))
 		if !reflect.DeepEqual(t, oldConfig) {
 			config <- t
-			fmt.Println("Reloaded")
+			fmt.Println("Reloaded config")
 			oldConfig = t
 		}
-		fmt.Scanln(&s)
-		if s == "exit" {
-			fmt.Println("Closing configChannel")
-			close(config)
-			wg.Done()
-			return
-		}
-
+		
+		time.Sleep(600 * time.Second)         //每10分钟刷新一次配置
 	}
+	close(config)
+	return
 }
 
 func launch(server *http.Server, wg *sync.WaitGroup) {
 	writeToLog("Port: " + server.Addr)
-	writeToLog("Starting server...")
+	writeToLog("Starting http slb service...")
 	handler := http.HandlerFunc(handle)
 	server.Handler = handler
 	server.ListenAndServe()
@@ -156,7 +165,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Adding the reload and exit goroutines
-	wg.Add(2)
+	wg.Add(1)
 
 	count = make(map[int]int)
 
@@ -165,11 +174,10 @@ func main() {
 	if len(os.Args) > 1 {
 		configFile = os.Args[1]
 	}
-	go reloadConfig(configFile, configChannel, &wg)
+	go reloadConfig(configFile, configChannel)
 
 	go func() {
 		for config = range configChannel {
-			fmt.Println(config)
 
 			port := ":" + config.Port
 			if port == ":" {
