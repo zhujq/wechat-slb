@@ -127,7 +127,7 @@ func launch(server *http.Server, wg *sync.WaitGroup) {
 }
 
 func main() {
-	var configFile = "./config.json"
+	var configFile = "./slb.json"
 	var server *http.Server
 	var wg sync.WaitGroup
 
