@@ -1,0 +1,10 @@
+{
+    "servers": 
+    [
+    "https://wechat-zhujq2018.cloud.okteto.net",
+    "https://wechat-pdb-zhujq2018.cloud.okteto.net",
+    "https://wechat.up.railway.app",
+    "http://token.zhujq.ga"
+    ],
+    "port" : "80"
+}
