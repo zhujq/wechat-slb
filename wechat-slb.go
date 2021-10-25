@@ -1,7 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -11,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"encoding/json"
-	"io/ioutil"
 )
 
 type Config struct {
@@ -42,7 +41,6 @@ func Parse(configFile string) Config {
 var config = Config{}
 var count map[int]int
 
-
 //Server key is -1
 const serverMethod = -1
 
@@ -52,14 +50,14 @@ func proxy(target string, w http.ResponseWriter, r *http.Request) {
 
 	r.URL.Host = url.Host
 	r.URL.Scheme = url.Scheme
-//	r.Header.Set("X-Forwarded-Host", r.Header.Get("Host"))
+	//	r.Header.Set("X-Forwarded-Host", r.Header.Get("Host"))
 	r.Host = url.Host
 
 	proxy.ServeHTTP(w, r)
 }
 
 //HTTPGet get 请求，用于健康检查
-func HTTPGet(uri string) (bool) {
+func HTTPGet(uri string) bool {
 	response, err := http.Get(uri)
 	if err != nil {
 		return false
@@ -68,7 +66,7 @@ func HTTPGet(uri string) (bool) {
 	if response.StatusCode != http.StatusOK {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -82,15 +80,15 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		writeToLog("Healthy Server: " + server)
 		proxy(server, w, r)
 		/*
-		for {
-			server := chooseServer(config.Servers, serverMethod)
-			if HTTPGet(server) == true {
-				writeToLog("Healthy Server: " + server)
-				proxy(server, w, r)
-				break
+			for {
+				server := chooseServer(config.Servers, serverMethod)
+				if HTTPGet(server) == true {
+					writeToLog("Healthy Server: " + server)
+					proxy(server, w, r)
+					break
+				}
+
 			}
-			
-		}
 		*/
 	} else if len(config.Routes) > 0 {
 		for m := range config.Routes {
@@ -108,13 +106,12 @@ func handle(w http.ResponseWriter, r *http.Request) {
 func chooseServer(servers []string, method int) string {
 	for {
 		count[method] = (count[method] + 1) % len(servers)
-		if servers[count[method]] != ""{
+		if servers[count[method]] != "" {
 			writeToLog("Chose server: " + servers[count[method]])
 			return servers[count[method]]
 		}
 	}
 }
-
 
 func writeToLog(message string) {
 	logFile, err := os.OpenFile("log.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -127,28 +124,29 @@ func writeToLog(message string) {
 }
 
 //Could be improved but gets the job done
-func reloadConfig(configFile string, config chan Config) {
+func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
 
 	var oldConfig Config
 	var t Config
 	for {
 		t = Parse(configFile)
-		for i,wcserver := range t.Servers{
-			if HTTPGet(wcserver) == false{
-				t.Servers[i] = ""    //不可达服务器置为空
-				writeToLog(wcserver+"is not alive!")
+		for i, wcserver := range t.Servers {
+			if HTTPGet(wcserver) == false {
+				t.Servers[i] = "" //不可达服务器置为空
+				writeToLog(wcserver + "is not alive!")
 			}
 		}
-	//	fmt.Println(reflect.DeepEqual(t, oldConfig))
+		//	fmt.Println(reflect.DeepEqual(t, oldConfig))
 		if !reflect.DeepEqual(t, oldConfig) {
 			config <- t
-			fmt.Println("Reloaded config")
+			writeToLog("Reloaded config")
 			oldConfig = t
 		}
-		
-		time.Sleep(600 * time.Second)         //每10分钟刷新一次配置
+
+		time.Sleep(600 * time.Second) //每10分钟刷新一次配置
 	}
 	close(config)
+	wg.Done()
 	return
 }
 
@@ -161,15 +159,13 @@ func launch(server *http.Server, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-
-
 func main() {
 	var configFile = "./slb.json"
 	var server *http.Server
 	var wg sync.WaitGroup
 
 	// Adding the reload and exit goroutines
-	wg.Add(1)
+	wg.Add(2)
 
 	count = make(map[int]int)
 
@@ -178,7 +174,7 @@ func main() {
 	if len(os.Args) > 1 {
 		configFile = os.Args[1]
 	}
-	go reloadConfig(configFile, configChannel)
+	go reloadConfig(configFile, configChannel, &wg)
 
 	go func() {
 		for config = range configChannel {
@@ -187,10 +183,10 @@ func main() {
 			if port == ":" {
 				port = port + "8080"
 			}
-	//		fmt.Println(server)
+			//		fmt.Println(server)
 			if server != nil {
 				writeToLog("Server closing: " + server.Addr)
-			//	fmt.Println("Server closing...")
+				//	fmt.Println("Server closing...")
 				server.Close()
 			}
 			server = &http.Server{
@@ -201,7 +197,7 @@ func main() {
 			wg.Add(1)
 			go launch(server, &wg)
 		}
-		fmt.Println("final")
+		writeToLog("The Web Service is Exited")
 		wg.Done()
 	}()
 
