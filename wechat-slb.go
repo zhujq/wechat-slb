@@ -67,6 +67,10 @@ func HTTPGet(uri string) bool {
 		return false
 	}
 
+	b, _ := ioutil.ReadAll(response.Body)
+	if string(b) != "ok" {
+		return false
+	}
 	return true
 }
 
