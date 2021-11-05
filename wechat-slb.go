@@ -58,7 +58,7 @@ func proxy(target string, w http.ResponseWriter, r *http.Request) {
 
 //HTTPGet get 请求，用于健康检查
 func HTTPGet(uri string) bool {
-	response, err := http.Get(uri)
+	response, err := http.Get(uri + "/healthck")
 	if err != nil {
 		return false
 	}
