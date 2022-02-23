@@ -33,7 +33,7 @@ func Parse(configFile string) Config {
 		panic(err)
 	}
 	if len(config.Servers) == 0 {
-		config.Servers = []string{"http://token.zhujq.ga"}
+		config.Servers = []string{"http://wechat.zhujq.ga"}
 	}
 	return config
 }
@@ -137,17 +137,17 @@ func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
 		for i, wcserver := range t.Servers {
 			if HTTPGet(wcserver) == false {
 				t.Servers[i] = "" //不可达服务器置为空
-				writeToLog(wcserver + "is not alive!")
+				writeToLog(wcserver + " is not alive!")
 			}
 		}
 		//	fmt.Println(reflect.DeepEqual(t, oldConfig))
 		if !reflect.DeepEqual(t, oldConfig) {
 			config <- t
-			writeToLog("Reloaded config")
+			writeToLog("slb config is refreshed.")
 			oldConfig = t
 		}
 
-		time.Sleep(600 * time.Second) //每10分钟刷新一次配置
+		time.Sleep(60 * time.Second) //每1分钟刷新一次配置
 	}
 	close(config)
 	wg.Done()
@@ -155,8 +155,7 @@ func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
 }
 
 func launch(server *http.Server, wg *sync.WaitGroup) {
-	writeToLog("Port: " + server.Addr)
-	writeToLog("Starting http slb service...")
+	writeToLog("Starting http slb service on port: " + server.Addr)
 	handler := http.HandlerFunc(handle)
 	server.Handler = handler
 	server.ListenAndServe()
@@ -188,20 +187,23 @@ func main() {
 				port = port + "8080"
 			}
 			//		fmt.Println(server)
-			if server != nil {
-				writeToLog("Server closing: " + server.Addr)
-				//	fmt.Println("Server closing...")
-				server.Close()
+			/*	if server != nil {
+					writeToLog("Server closing: " + server.Addr)
+					//	fmt.Println("Server closing...")
+					server.Close()
+				}
+			*/
+			if server == nil {
+				server = &http.Server{
+					Addr:         port,
+					ReadTimeout:  5 * time.Second,
+					WriteTimeout: 10 * time.Second,
+				}
+				wg.Add(1)
+				go launch(server, &wg)
 			}
-			server = &http.Server{
-				Addr:         port,
-				ReadTimeout:  5 * time.Second,
-				WriteTimeout: 10 * time.Second,
-			}
-			wg.Add(1)
-			go launch(server, &wg)
 		}
-		writeToLog("The Web Service is Exited")
+		writeToLog("The SLB Web Service is Exited")
 		wg.Done()
 	}()
 
