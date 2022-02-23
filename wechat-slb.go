@@ -81,7 +81,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	if len(config.Servers) > 0 {
 
 		server := chooseServer(config.Servers, serverMethod)
-		writeToLog("Healthy Server: " + server)
+		//	writeToLog("Healthy Server: " + server)
 		proxy(server, w, r)
 		/*
 			for {
@@ -111,7 +111,7 @@ func chooseServer(servers []string, method int) string {
 	for {
 		count[method] = (count[method] + 1) % len(servers)
 		if servers[count[method]] != "" {
-			writeToLog("Chose server: " + servers[count[method]])
+			writeToLog("Chose healthy server: " + servers[count[method]])
 			return servers[count[method]]
 		}
 	}
@@ -147,7 +147,7 @@ func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
 			oldConfig = t
 		}
 
-		time.Sleep(60 * time.Second) //每1分钟刷新一次配置
+		time.Sleep(120 * time.Second) //每2分钟刷新一次配置
 	}
 	close(config)
 	wg.Done()
