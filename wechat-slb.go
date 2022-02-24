@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +19,8 @@ import (
 type Config struct {
 	Servers []string `json:"servers"`
 	Routes  []Route  `json:"routes"`
-	Port    string   `json:"port`
+	Port    string   `json:"port"`
+	Mode    string   `json:"mode"`
 }
 
 type Route struct {
@@ -38,11 +41,14 @@ func Parse(configFile string) Config {
 	return config
 }
 
-var config = Config{}
-var count map[int]int
-
 //Server key is -1
 const serverMethod = -1
+
+const maxslbs = 10
+
+var config = Config{}
+var count map[int]int
+var delay = [maxslbs]int{0}
 
 func proxy(target string, w http.ResponseWriter, r *http.Request) {
 	url, _ := url.Parse(target)
@@ -77,7 +83,24 @@ func HTTPGet(uri string) bool {
 func handle(w http.ResponseWriter, r *http.Request) {
 	baseURL := r.URL.Path[1:]
 	baseURL = strings.Split(baseURL, "/")[0]
-	writeToLog("Basepath: /" + baseURL)
+	writeToLog("Basepath: / " + baseURL)
+	if baseURL == "manager" {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		result := "<html><head><title>SLB Server Status</title></head><body>SLB Server is running on mode:<b>" + config.Mode + "</b><br><table border=2><tr><td>Backend URL</td><td>Delay</td>"
+
+		for index, val := range config.Servers {
+			result += "<tr><td>"
+			result += val
+			result += "</td><td>"
+			result += strconv.Itoa(delay[index])
+			result += "</td></tr>"
+		}
+
+		result += "</table></body></html>"
+		fmt.Fprintf(w, result)
+		return
+	}
 	if len(config.Servers) > 0 {
 
 		server := chooseServer(config.Servers, serverMethod)
@@ -108,12 +131,31 @@ func handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func chooseServer(servers []string, method int) string {
-	for {
-		count[method] = (count[method] + 1) % len(servers)
-		if servers[count[method]] != "" {
-			writeToLog("Chose healthy server: " + servers[count[method]])
-			return servers[count[method]]
+	switch config.Mode {
+	case "random":
+		for {
+			count[method] = (count[method] + 1) % len(servers)
+			if servers[count[method]] != "" {
+				writeToLog("Chose random healthy server: " + servers[count[method]])
+				return servers[count[method]]
+			}
 		}
+	case "best":
+		mindelay := delay[0]
+		minindex := 0
+		slbdelay := delay[:len(config.Servers)]
+		for index, val := range slbdelay {
+			if mindelay > val && val > 0 {
+				minindex = index
+				mindelay = slbdelay[index]
+			}
+		}
+		writeToLog("Chose best healthy server: " + servers[minindex])
+		return servers[minindex]
+
+	default:
+		return "http://wechat.zhujq.ga"
+
 	}
 }
 
@@ -134,10 +176,17 @@ func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
 	var t Config
 	for {
 		t = Parse(configFile)
+
 		for i, wcserver := range t.Servers {
+			t1 := time.Now()
 			if HTTPGet(wcserver) == false {
 				t.Servers[i] = "" //不可达服务器置为空
 				writeToLog(wcserver + " is not alive!")
+				delay[i] = -1
+			} else {
+				t2 := time.Now()
+				//	log.Println(wcserver + " delay is:" + strconv.Itoa(t2.Sub(t1).Milliseconds()))
+				delay[i] = int(t2.Sub(t1).Milliseconds())
 			}
 		}
 		//	fmt.Println(reflect.DeepEqual(t, oldConfig))
