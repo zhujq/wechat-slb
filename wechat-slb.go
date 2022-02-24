@@ -87,7 +87,10 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	if baseURL == "manager" {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		result := "<html><head><title>SLB Server Status</title></head><body>SLB Server is running on mode:<b>" + config.Mode + "</b><br><table border=2><tr><td>Backend URL</td><td>Delay</td>"
+		result := `<html><head><title>SLB Server Status</title><meta http-equiv="pragma" content="no-cache"><meta http-equiv="cache-control" content="no-cache"><meta http-equiv="expires" content="0"></head>`
+		result += "<body>SLB Server is running on mode:<b>" + config.Mode + "</b>"
+		result += `<form action="chgmode"><input type="submit" value="Mode-Switch"></form> `
+		result += "<br><table border=2><tr><td>Backend URL</td><td>Delay</td>"
 
 		for index, val := range config.Servers {
 			result += "<tr><td>"
@@ -99,8 +102,26 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 		result += "</table></body></html>"
 		fmt.Fprintf(w, result)
+
 		return
 	}
+
+	if baseURL == "chgmode" {
+
+		if config.Mode == "random" {
+			config.Mode = "best"
+		} else {
+			config.Mode = "random"
+		}
+		file, _ := os.OpenFile("./slb.json", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+		defer file.Close()
+		encoder := json.NewEncoder(file)
+		encoder.SetIndent("", "  ")
+		encoder.Encode(config)
+		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
+		return
+	}
+
 	if len(config.Servers) > 0 {
 
 		server := chooseServer(config.Servers, serverMethod)
@@ -135,7 +156,7 @@ func chooseServer(servers []string, method int) string {
 	case "random":
 		for {
 			count[method] = (count[method] + 1) % len(servers)
-			if servers[count[method]] != "" {
+			if servers[count[method]] != "" && delay[count[method]] != -1 {
 				writeToLog("Chose random healthy server: " + servers[count[method]])
 				return servers[count[method]]
 			}
@@ -180,9 +201,9 @@ func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
 		for i, wcserver := range t.Servers {
 			t1 := time.Now()
 			if HTTPGet(wcserver) == false {
-				t.Servers[i] = "" //不可达服务器置为空
+				//	t.Servers[i] = "" //不可达服务器置为空
 				writeToLog(wcserver + " is not alive!")
-				delay[i] = -1
+				delay[i] = -1 //设置延迟为-1表示不可达
 			} else {
 				t2 := time.Now()
 				//	log.Println(wcserver + " delay is:" + strconv.Itoa(t2.Sub(t1).Milliseconds()))
