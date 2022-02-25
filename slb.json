@@ -7,7 +7,15 @@
     "https://wechat--wechat--ubwechat--udm2-xcby.code.run",
     "https://wechat-zhujq.koyeb.app"
   ],
+  "delay": [
+    1505,
+    1405,
+    921,
+    22,
+    932,
+    687
+  ],
   "routes": null,
   "port": "80",
-  "mode": "random"
+  "mode": "best"
 }

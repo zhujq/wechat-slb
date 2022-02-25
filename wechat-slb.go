@@ -18,6 +18,7 @@ import (
 
 type Config struct {
 	Servers []string `json:"servers"`
+	Delay   []int    `json:"delay"`
 	Routes  []Route  `json:"routes"`
 	Port    string   `json:"port"`
 	Mode    string   `json:"mode"`
@@ -44,11 +45,8 @@ func Parse(configFile string) Config {
 //Server key is -1
 const serverMethod = -1
 
-const maxslbs = 10
-
 var config = Config{}
 var count map[int]int
-var delay = [maxslbs]int{0}
 
 func proxy(target string, w http.ResponseWriter, r *http.Request) {
 	url, _ := url.Parse(target)
@@ -80,6 +78,15 @@ func HTTPGet(uri string) bool {
 	return true
 }
 
+func writeconf() {
+	file, _ := os.OpenFile("./slb.json", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	encoder.Encode(config)
+}
+
 func handle(w http.ResponseWriter, r *http.Request) {
 	baseURL := r.URL.Path[1:]
 	baseURL = strings.Split(baseURL, "/")[0]
@@ -90,17 +97,25 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		result := `<html><head><title>SLB Server Status</title><meta http-equiv="pragma" content="no-cache"><meta http-equiv="cache-control" content="no-cache"><meta http-equiv="expires" content="0"></head>`
 		result += "<body>SLB Server is running on mode:<b>" + config.Mode + "</b>"
 		result += `<form action="chgmode"><input type="submit" value="Mode-Switch"></form> `
-		result += "<br><table border=2><tr><td>Backend URL</td><td>Delay</td>"
+		result += `<form action="delslbserver" method="get"> `
+		result += "SLB Backend Server's Delay(ms):<table border=2><tr><td>No.</td><td>Backend URL</td><td>Delay</td><td>To DEL</td>"
 
 		for index, val := range config.Servers {
 			result += "<tr><td>"
+			result += strconv.Itoa(index)
+			result += "</td><td>"
 			result += val
 			result += "</td><td>"
-			result += strconv.Itoa(delay[index])
+			result += strconv.Itoa(config.Delay[index])
+			result += `</td><td><input type="radio" name="delslbindex" value="`
+			result += strconv.Itoa(index)
+			result += `">`
 			result += "</td></tr>"
 		}
 
-		result += "</table></body></html>"
+		result += `<tr><td colspan="4"  align="right"><input type="submit" value="Del"> </td></table></form>`
+		result += `<form action="addslbserver" method="get">New SLB Backend URL:<br><input type="text" name="newslbserver"> <input type="submit" value="Add"></form>`
+		result += "</body></html>"
 		fmt.Fprintf(w, result)
 
 		return
@@ -113,12 +128,51 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		} else {
 			config.Mode = "random"
 		}
-		file, _ := os.OpenFile("./slb.json", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
-		defer file.Close()
-		encoder := json.NewEncoder(file)
-		encoder.SetIndent("", "  ")
-		encoder.Encode(config)
+
+		writeconf()
 		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
+		return
+	}
+
+	if baseURL == "addslbserver" {
+		m, _ := url.ParseQuery(r.URL.RawQuery)
+		newslbs := m["newslbserver"][0]
+		_, err := url.ParseRequestURI(newslbs)
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, (newslbs + " is a wrong url"))
+			return
+		}
+		//	log.Println(newslbs)
+		config.Servers = append(config.Servers, newslbs)
+		config.Delay = append(config.Delay, 0)
+
+		writeconf()
+
+		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
+
+		return
+	}
+
+	if baseURL == "delslbserver" {
+		m, _ := url.ParseQuery(r.URL.RawQuery)
+		delslbindex, err := strconv.Atoi(m["delslbindex"][0])
+
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "A wrong del index!")
+			return
+		}
+
+		config.Servers = append(config.Servers[:delslbindex], config.Servers[(delslbindex+1):]...)
+		config.Delay = append(config.Delay[:delslbindex], config.Delay[(delslbindex+1):]...)
+
+		writeconf()
+
+		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
+
 		return
 	}
 
@@ -156,19 +210,19 @@ func chooseServer(servers []string, method int) string {
 	case "random":
 		for {
 			count[method] = (count[method] + 1) % len(servers)
-			if servers[count[method]] != "" && delay[count[method]] != -1 {
+			if servers[count[method]] != "" && config.Delay[count[method]] != -1 {
 				writeToLog("Chose random healthy server: " + servers[count[method]])
 				return servers[count[method]]
 			}
 		}
 	case "best":
-		mindelay := delay[0]
+		mindelay := config.Delay[0]
 		minindex := 0
-		slbdelay := delay[:len(config.Servers)]
-		for index, val := range slbdelay {
+		//	slbdelay := delay[:len(config.Servers)]
+		for index, val := range config.Delay {
 			if mindelay > val && val > 0 {
 				minindex = index
-				mindelay = slbdelay[index]
+				mindelay = val
 			}
 		}
 		writeToLog("Chose best healthy server: " + servers[minindex])
@@ -191,35 +245,43 @@ func writeToLog(message string) {
 }
 
 //Could be improved but gets the job done
-func reloadConfig(configFile string, config chan Config, wg *sync.WaitGroup) {
+func reloadConfig(configFile string, conf chan Config, wg *sync.WaitGroup) {
 
 	var oldConfig Config
 	var t Config
 	for {
 		t = Parse(configFile)
-
-		for i, wcserver := range t.Servers {
-			t1 := time.Now()
-			if HTTPGet(wcserver) == false {
-				//	t.Servers[i] = "" //不可达服务器置为空
-				writeToLog(wcserver + " is not alive!")
-				delay[i] = -1 //设置延迟为-1表示不可达
-			} else {
-				t2 := time.Now()
-				//	log.Println(wcserver + " delay is:" + strconv.Itoa(t2.Sub(t1).Milliseconds()))
-				delay[i] = int(t2.Sub(t1).Milliseconds())
-			}
-		}
 		//	fmt.Println(reflect.DeepEqual(t, oldConfig))
-		if !reflect.DeepEqual(t, oldConfig) {
-			config <- t
+		if reflect.DeepEqual(t.Servers, oldConfig.Servers) == false || t.Mode != oldConfig.Mode {
+			conf <- t
 			writeToLog("slb config is refreshed.")
 			oldConfig = t
 		}
 
-		time.Sleep(120 * time.Second) //每2分钟刷新一次配置
+		time.Sleep(600 * time.Second) //每10分钟刷新一次配置
 	}
-	close(config)
+	close(conf)
+	wg.Done()
+	return
+}
+
+func refreshdelay(wg *sync.WaitGroup) {
+	for {
+		time.Sleep(120 * time.Second) //每2分钟刷新一次delay
+
+		for i, wcserver := range config.Servers {
+			t1 := time.Now()
+			if HTTPGet(wcserver) == false {
+				writeToLog(wcserver + " is not alive!")
+				config.Delay[i] = -1 //设置延迟为-1表示不可达
+			} else {
+				t2 := time.Now()
+				//	log.Println(wcserver + " delay is:" + strconv.Itoa(t2.Sub(t1).Milliseconds()))
+				config.Delay[i] = int(t2.Sub(t1).Milliseconds()) //直接修改config全局变量的delay部分
+			}
+		}
+		//	writeconf()
+	}
 	wg.Done()
 	return
 }
@@ -238,7 +300,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Adding the reload and exit goroutines
-	wg.Add(2)
+	wg.Add(3)
 
 	count = make(map[int]int)
 
@@ -248,6 +310,7 @@ func main() {
 		configFile = os.Args[1]
 	}
 	go reloadConfig(configFile, configChannel, &wg)
+	go refreshdelay(&wg)
 
 	go func() {
 		for config = range configChannel {
