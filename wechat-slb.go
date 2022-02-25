@@ -22,6 +22,7 @@ type Config struct {
 	Routes  []Route  `json:"routes"`
 	Port    string   `json:"port"`
 	Mode    string   `json:"mode"`
+	Theone  int      `json:"theone"`
 }
 
 type Route struct {
@@ -94,12 +95,22 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	if baseURL == "manager" {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		result := `<html><head><title>SLB Server Status</title><meta http-equiv="pragma" content="no-cache"><meta http-equiv="cache-control" content="no-cache"><meta http-equiv="expires" content="0"></head>`
-		result += "<body>SLB Server is running on mode:<b>" + config.Mode + "</b>"
-		result += `<form action="chgmode"><input type="submit" value="Mode-Switch"></form> `
-		result += `<form action="delslbserver" method="get"> `
-		result += "SLB Backend Server's Delay(ms):<table border=2><tr><td>No.</td><td>Backend URL</td><td>Delay</td><td>To DEL</td>"
-
+		result := `<html><head><title>SLB Server Status</title><meta http-equiv="pragma" content="no-cache"><meta http-equiv="cache-control" content="no-cache"><meta http-equiv="expires" content="0"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>`
+		result += `<style>body{ font-family:"微软雅黑"}</style>`
+		result += `<body><div style="border:1px solid #999;width:600px;height:50px;color:White ;background-color:Turquoise">SLB Server is running on mode:<b> `
+		result += config.Mode + "</b>"
+		result += `<form action="chgmode">Random<input type="radio" name="mode" value="random">&nbsp;&nbsp;Best<input type="radio" name="mode" value="best">&nbsp;&nbsp;single<input type="radio" name="mode" value="single">&nbsp;&nbsp;&nbsp;&nbsp;<input type="submit" value="Mode-Switch" style="color:White ;background-color:Turquoise"></form> </div>`
+		if config.Mode == "single" {
+			result += `<form action="choosesingle" method="get"> `
+		} else {
+			result += `<form action="delslbserver" method="get"> `
+		}
+		result += "<br>SLB Backend Server's Delay(ms):<table border=2><tr><td>No.</td><td>Backend URL</td><td>Delay</td>"
+		if config.Mode == "single" {
+			result += "<td>To Choose Single Backend</td>"
+		} else {
+			result += "<td>To DEL</td>"
+		}
 		for index, val := range config.Servers {
 			result += "<tr><td>"
 			result += strconv.Itoa(index)
@@ -107,14 +118,21 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			result += val
 			result += "</td><td>"
 			result += strconv.Itoa(config.Delay[index])
-			result += `</td><td><input type="radio" name="delslbindex" value="`
+			if config.Mode == "single" && config.Theone == index {
+				result += `</td><td><input type="radio" name="delslbindex" checked="checked" value="`
+			} else {
+				result += `</td><td><input type="radio" name="delslbindex" value="`
+			}
 			result += strconv.Itoa(index)
 			result += `">`
 			result += "</td></tr>"
 		}
-
-		result += `<tr><td colspan="4"  align="right"><input type="submit" value="Del"> </td></table></form>`
-		result += `<form action="addslbserver" method="get">New SLB Backend URL:<br><input type="text" name="newslbserver"> <input type="submit" value="Add"></form>`
+		if config.Mode == "single" {
+			result += `<tr><td colspan="4"  align="right"><input type="submit" value="Choose"> </td></table></form>`
+		} else {
+			result += `<tr><td colspan="4"  align="right"><input type="submit" value="Del"> </td></table></form>`
+		}
+		result += `<form action="addslbserver" method="get">New SLB Backend URL:<br><input type="text" name="newslbserver" style="width:300px"> <input type="submit" value="Add"></form>`
 		result += "</body></html>"
 		fmt.Fprintf(w, result)
 
@@ -123,11 +141,26 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 	if baseURL == "chgmode" {
 
-		if config.Mode == "random" {
-			config.Mode = "best"
-		} else {
-			config.Mode = "random"
+		m, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(m) == 0 || strings.Contains(r.URL.RawQuery, "mode") == false {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "choose mode error")
+			return
 		}
+
+		mode := m["mode"][0]
+		if len(mode) == 0 {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "choose mode error")
+			return
+		}
+
+		if mode != "random" && mode != "best" && mode != "single" {
+			mode = "random"
+		}
+		config.Mode = mode
 
 		writeconf()
 		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
@@ -135,9 +168,21 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if baseURL == "addslbserver" {
-		m, _ := url.ParseQuery(r.URL.RawQuery)
+		m, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(m) == 0 || strings.Contains(r.URL.RawQuery, "newslbserver") == false {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "add slb backend url error")
+			return
+		}
 		newslbs := m["newslbserver"][0]
-		_, err := url.ParseRequestURI(newslbs)
+		if len(newslbs) == 0 {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "add slb backend url error")
+			return
+		}
+		_, err = url.ParseRequestURI(newslbs)
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusOK)
@@ -156,10 +201,16 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if baseURL == "delslbserver" {
-		m, _ := url.ParseQuery(r.URL.RawQuery)
+		m, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(m) == 0 {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "delete slb backend url error")
+			return
+		}
 		delslbindex, err := strconv.Atoi(m["delslbindex"][0])
 
-		if err != nil {
+		if err != nil || delslbindex > (len(config.Servers)-1) {
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintf(w, "A wrong del index!")
@@ -174,6 +225,42 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
 
 		return
+	}
+
+	if baseURL == "choosesingle" {
+
+		if config.Mode != "single" {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "Can't choose single index when not on single mode!")
+			return
+		}
+
+		m, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(m) == 0 {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "Choose single backend url error")
+			return
+		}
+
+		singleslbindex, err := strconv.Atoi(m["delslbindex"][0]) //复用了form的delslbindex
+
+		if err != nil || singleslbindex > (len(config.Servers)-1) {
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "A wrong choose single index!")
+			return
+		}
+
+		config.Theone = singleslbindex
+
+		writeconf()
+
+		http.Redirect(w, r, "/manager", http.StatusTemporaryRedirect)
+
+		return
+
 	}
 
 	if len(config.Servers) > 0 {
@@ -227,6 +314,8 @@ func chooseServer(servers []string, method int) string {
 		}
 		writeToLog("Chose best healthy server: " + servers[minindex])
 		return servers[minindex]
+	case "single":
+		return servers[config.Theone]
 
 	default:
 		return "http://wechat.zhujq.ga"

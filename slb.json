@@ -8,14 +8,15 @@
     "https://wechat-zhujq.koyeb.app"
   ],
   "delay": [
-    1505,
-    1405,
-    921,
-    22,
-    932,
-    687
+    715,
+    664,
+    551,
+    6,
+    895,
+    2126
   ],
   "routes": null,
   "port": "80",
-  "mode": "best"
+  "mode": "random",
+  "theone": 0
 }
