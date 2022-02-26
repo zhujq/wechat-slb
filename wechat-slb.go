@@ -97,15 +97,16 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		result := `<html><head><title>SLB Server Status</title><meta http-equiv="pragma" content="no-cache"><meta http-equiv="cache-control" content="no-cache"><meta http-equiv="expires" content="0"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head>`
 		result += `<style>body{ font-family:"微软雅黑"}</style>`
-		result += `<body><div style="border:1px solid #999;width:600px;height:50px;color:White ;background-color:Turquoise">SLB Server is running on mode:<b> `
-		result += config.Mode + "</b>"
-		result += `<form action="chgmode">Random<input type="radio" name="mode" value="random">&nbsp;&nbsp;Best<input type="radio" name="mode" value="best">&nbsp;&nbsp;single<input type="radio" name="mode" value="single">&nbsp;&nbsp;&nbsp;&nbsp;<input type="submit" value="Mode-Switch" style="color:White ;background-color:Turquoise"></form> </div>`
+		result += `<body style="text-align:center;background-color:Turquoise"><div style="border:1px solid #F00;width:600px;height:450px ;margin:auto;text-align:left;position:fixed;top:180;left:0;right:0">SLB Server is running on port: `
+		result += `<b><font color="red">` + config.Port + `</font></b>，SLB Mode is：<b><font color="red">`
+		result += config.Mode + "</font></b>"
+		result += `<form action="chgmode">Random<input type="radio" name="mode" value="random">&nbsp;&nbsp;Best<input type="radio" name="mode" value="best">&nbsp;&nbsp;single<input type="radio" name="mode" value="single">&nbsp;&nbsp;&nbsp;&nbsp;<input type="submit" value="Mode-Switch" style="color:Red ;background-color:Turquoise;width:150px;font-weight:bold"></form>`
 		if config.Mode == "single" {
 			result += `<form action="choosesingle" method="get"> `
 		} else {
 			result += `<form action="delslbserver" method="get"> `
 		}
-		result += "<br>SLB Backend Server's Delay(ms):<table border=2><tr><td>No.</td><td>Backend URL</td><td>Delay</td>"
+		result += `<hr>SLB Backend Server's Delay(ms):<table border=2><tr><td>No.</td><td>Backend URL</td><td>Delay</td>`
 		if config.Mode == "single" {
 			result += "<td>To Choose Single Backend</td>"
 		} else {
@@ -132,7 +133,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		} else {
 			result += `<tr><td colspan="4"  align="right"><input type="submit" value="Del"> </td></table></form>`
 		}
-		result += `<form action="addslbserver" method="get">New SLB Backend URL:<br><input type="text" name="newslbserver" style="width:300px"> <input type="submit" value="Add"></form>`
+		result += `<hr><form action="addslbserver" method="get">New SLB Backend URL:<br><input type="text" name="newslbserver" style="width:300px"> <input type="submit" value="Add"></form></div>`
 		result += "</body></html>"
 		fmt.Fprintf(w, result)
 
@@ -315,6 +316,7 @@ func chooseServer(servers []string, method int) string {
 		writeToLog("Chose best healthy server: " + servers[minindex])
 		return servers[minindex]
 	case "single":
+		writeToLog("Chose single server: " + servers[config.Theone])
 		return servers[config.Theone]
 
 	default:
