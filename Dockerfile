@@ -6,6 +6,7 @@ COPY . .
 RUN apk add --no-cache git && set -x && \
     go mod init && go get -d -v
 RUN CGO_ENABLED=0 GOOS=linux go build -o /wechat-slb wechat-slb.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /wechat-token wechat-token.go
 
 
 FROM ubuntu:latest
@@ -25,8 +26,9 @@ RUN apt-get update \
   && sed -ri 's/UsePAM yes/#UsePAM yes/g' /etc/ssh/sshd_config && mkdir /root/.ssh  \
   && rm -rf /var/lib/apt/lists/* 
 COPY --from=builder /wechat-slb . 
+COPY --from=builder /wechat-token . 
 ADD . .
 RUN chmod +x /entrypoint.sh /wechat-slb
 ENTRYPOINT  /entrypoint.sh 
 
-EXPOSE 8080 22 80
+EXPOSE 8080 22 80 8880
