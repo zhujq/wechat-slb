@@ -31,4 +31,4 @@ ADD . .
 RUN chmod +x /entrypoint.sh /wechat-slb
 ENTRYPOINT  /entrypoint.sh 
 
-EXPOSE 8080 22 80 8880
+EXPOSE 443 22 80 8880
