@@ -23,7 +23,6 @@ RUN apt-get update \
   && sed -ri 's/^#?TCPKeepAlive\s+.*/TCPKeepAlive yes/' /etc/ssh/sshd_config \
   && sed -ri 's/^#?PasswordAuthentication\s+.*/PasswordAuthentication no/' /etc/ssh/sshd_config \
   && sed -ri 's/^#PubkeyAuthentication\s+.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config \
-  && echo "PubkeyAcceptedAlgorithms +ssh-rsa" >> /etc/ssh/sshd_config \
   && sed -ri 's/UsePAM yes/#UsePAM yes/g' /etc/ssh/sshd_config && mkdir -p /root/.ssh  \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /wechat-slb .
