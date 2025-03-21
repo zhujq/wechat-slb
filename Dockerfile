@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /wechat-slb wechat-slb.go
 RUN CGO_ENABLED=0 GOOS=linux go build -o /wechat-token wechat-token.go
 
 
-FROM ubuntu:20.04
+FROM ubuntu:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -18,6 +18,7 @@ RUN apt-get update \
   && apt-get install -y curl openssh-server zip unzip net-tools inetutils-ping iproute2 tcpdump git vim mysql-client redis-tools tmux\
   && mkdir -p /var/run/sshd \
   && sed -ri 's/^#?PermitRootLogin\s+.*/PermitRootLogin yes/' /etc/ssh/sshd_config \
+  && sed -i 's/^#\s*Port.*/Port 2222/' /etc/ssh/sshd_config \
   && sed -ri 's/^#?ClientAliveInterval\s+.*/ClientAliveInterval 60/' /etc/ssh/sshd_config \
   && sed -ri 's/^#?ClientAliveCountMax\s+.*/ClientAliveCountMax 1000/' /etc/ssh/sshd_config \
   && sed -ri 's/^#?TCPKeepAlive\s+.*/TCPKeepAlive yes/' /etc/ssh/sshd_config \
@@ -31,4 +32,4 @@ ADD . .
 RUN chmod +x /entrypoint.sh /wechat-slb
 ENTRYPOINT  /entrypoint.sh
 
-EXPOSE 443 22 80 8880
+EXPOSE 443 2222 80 8880
