@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -290,10 +290,10 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-	//log.Println("hj.hijacker is ok")
+		//log.Println("hj.hijacker is ok")
 		defer clientConn.Close()
 
-		server, err := net.Dial("tcp", "127.0.0.1:8080")
+		server, err := net.Dial("tcp", "127.0.0.1:80")
 		if err != nil {
 			log.Println("error to connect to v2ray:", err)
 			return
@@ -302,7 +302,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		server.Write([]byte(str))
 		go io.Copy(server, clientConn)
 		io.Copy(clientConn, server)
-
+		return
 	}
 
 	if len(config.Servers) > 0 {
