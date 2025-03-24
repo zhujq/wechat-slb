@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -43,7 +45,7 @@ func Parse(configFile string) Config {
 	return config
 }
 
-//Server key is -1
+// Server key is -1
 const serverMethod = -1
 
 var config = Config{}
@@ -61,7 +63,7 @@ func proxy(target string, w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(w, r)
 }
 
-//HTTPGet get 请求，用于健康检查
+// HTTPGet get 请求，用于健康检查
 func HTTPGet(uri string) bool {
 	response, err := http.Get(uri + "/healthck")
 	if err != nil {
@@ -264,6 +266,45 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+	if baseURL == "dw" {
+		str := "GET /dw HTTP/1.1\r\n"
+		str += ("Host: " + r.Host + "\r\n")
+		for k, v := range r.Header {
+			str += (k + ": " + strings.Join(v, ",") + "\r\n")
+		}
+		str += "\r\n"
+		log.Println(str)
+
+		//log.Println("Getting ray access request...")
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			log.Println("Hijacker error")
+			http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
+			return
+		}
+
+		clientConn, _, err := hj.Hijack()
+		if err != nil {
+			log.Println("Hijacker Conn error")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	//log.Println("hj.hijacker is ok")
+		defer clientConn.Close()
+
+		server, err := net.Dial("tcp", "127.0.0.1:8080")
+		if err != nil {
+			log.Println("error to connect to v2ray:", err)
+			return
+		}
+
+		server.Write([]byte(str))
+		go io.Copy(server, clientConn)
+		io.Copy(clientConn, server)
+
+	}
+
 	if len(config.Servers) > 0 {
 
 		server := chooseServer(config.Servers, serverMethod)
@@ -335,7 +376,7 @@ func writeToLog(message string) {
 	logFile.Close()
 }
 
-//Could be improved but gets the job done
+// Could be improved but gets the job done
 func reloadConfig(configFile string, conf chan Config, wg *sync.WaitGroup) {
 
 	var oldConfig Config
